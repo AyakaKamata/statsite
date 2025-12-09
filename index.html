@@ -2,18 +2,30 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>正規分布デモ（軸固定）</title>
+  <title>分布デモ（正規分布 & ベータ分布）</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    body { font-family: sans-serif; max-width: 800px; margin: 20px auto; }
+    body { font-family: sans-serif; max-width: 900px; margin: 20px auto; }
     .control { margin-bottom: 20px; }
     label { display: block; margin-bottom: 8px; }
+    .controls-group { margin-top: 10px; }
   </style>
 </head>
 <body>
-  <h1>正規分布（μ と σ を変えても軸は固定）</h1>
+  <h1>統計的分布のインタラクティブデモ</h1>
 
   <div class="control">
+    <label>
+      分布の種類:
+      <select id="dist-select">
+        <option value="normal">正規分布</option>
+        <option value="beta">ベータ分布</option>
+      </select>
+    </label>
+  </div>
+
+  <!-- 正規分布のパラメータ -->
+  <div id="normal-controls" class="controls-group">
     <label>
       μ（平均）: <span id="mu-value">0</span>
       <input id="mu" type="range" min="-3" max="3" step="0.1" value="0">
@@ -24,18 +36,29 @@
     </label>
   </div>
 
-  <div id="plot" style="width:100%;height:400px;"></div>
+  <!-- ベータ分布のパラメータ -->
+  <div id="beta-controls" class="controls-group" style="display:none;">
+    <label>
+      α（shape1）: <span id="alpha-value">2.0</span>
+      <input id="alpha" type="range" min="0.5" max="5" step="0.1" value="2">
+    </label>
+    <label>
+      β（shape2）: <span id="beta-value">2.0</span>
+      <input id="beta" type="range" min="0.5" max="5" step="0.1" value="2">
+    </label>
+  </div>
+
+  <div id="plot" style="width:100%;height:450px;"></div>
 
   <script>
-    // 正規分布の密度関数
+    // ===== 正規分布関連 =====
     function normalPdf(x, mu, sigma) {
       const coeff = 1 / (sigma * Math.sqrt(2 * Math.PI));
       const exponent = - Math.pow(x - mu, 2) / (2 * sigma * sigma);
       return coeff * Math.exp(exponent);
     }
 
-    // x は固定の範囲 [-10, 10] で生成
-    function generateXs() {
+    function generateNormalXs() {
       const xs = [];
       const start = -10;
       const end = 10;
@@ -46,64 +69,155 @@
       return xs;
     }
 
-    const xs = generateXs();
+    const normalXs = generateNormalXs();
 
-    // 与えられた μ, σ で y を計算
-    function computeYs(mu, sigma) {
-      return xs.map(x => normalPdf(x, mu, sigma));
+    function computeNormalYs(mu, sigma) {
+      return normalXs.map(x => normalPdf(x, mu, sigma));
     }
 
+    // ===== ベータ分布関連 =====
+    // ベータ分布の PDF（数値積分で正規化）
+    function generateBetaData(alpha, beta) {
+      const xs = [];
+      const ysRaw = [];
+      const start = 0;
+      const end = 1;
+      const n = 400;
+      const step = (end - start) / n;
+
+      // まず未正規化の y を計算
+      for (let i = 0; i <= n; i++) {
+        const x = start + step * i;
+        xs.push(x);
+        // x=0,1 近傍の数値不安定対策
+        const xx = Math.min(Math.max(x, 1e-10), 1 - 1e-10);
+        const y = Math.pow(xx, alpha - 1) * Math.pow(1 - xx, beta - 1);
+        ysRaw.push(y);
+      }
+
+      // 台形則で面積を計算して 1 になるようスケール
+      let area = 0;
+      for (let i = 0; i < ysRaw.length - 1; i++) {
+        area += 0.5 * (ysRaw[i] + ysRaw[i + 1]) * step;
+      }
+      const scale = area > 0 ? 1 / area : 1;
+
+      const ys = ysRaw.map(y => y * scale);
+      return { xs, ys };
+    }
+
+    // ===== DOM 要素 =====
+    const distSelect = document.getElementById('dist-select');
+
+    const normalControls = document.getElementById('normal-controls');
     const muInput = document.getElementById('mu');
     const sigmaInput = document.getElementById('sigma');
     const muValue = document.getElementById('mu-value');
     const sigmaValue = document.getElementById('sigma-value');
 
-    // 初期パラメータ
-    let mu = parseFloat(muInput.value);
-    let sigma = parseFloat(sigmaInput.value);
+    const betaControls = document.getElementById('beta-controls');
+    const alphaInput = document.getElementById('alpha');
+    const betaInput = document.getElementById('beta');
+    const alphaValue = document.getElementById('alpha-value');
+    const betaValue = document.getElementById('beta-value');
 
-    // 初期描画
-    muValue.textContent = mu.toFixed(1);
-    sigmaValue.textContent = sigma.toFixed(1);
-
-    const trace = {
-      x: xs,
-      y: computeYs(mu, sigma),
-      mode: 'lines',
-      name: 'Normal PDF'
-    };
-
-    const layout = {
-      margin: { t: 20 },
-      xaxis: {
-        title: 'x',
-        range: [-10, 10],     // x 軸を固定
-        autorange: false
-      },
-      yaxis: {
-        title: 'f(x)',
-        range: [0, 0.5],      // y 軸も固定（必要に応じて調整）
-        autorange: false
+    // ===== 描画処理 =====
+    function getLayoutForDist(dist) {
+      if (dist === 'normal') {
+        return {
+          title: '正規分布',
+          margin: { t: 40 },
+          xaxis: {
+            title: 'x',
+            range: [-10, 10],
+            autorange: false
+          },
+          yaxis: {
+            title: 'f(x)',
+            range: [0, 0.5],
+            autorange: false
+          }
+        };
+      } else {
+        return {
+          title: 'ベータ分布',
+          margin: { t: 40 },
+          xaxis: {
+            title: 'x',
+            range: [0, 1],
+            autorange: false
+          },
+          yaxis: {
+            title: 'f(x)',
+            range: [0, 4], // α,β を 0.5〜5 に制限しているのでこのくらいで十分
+            autorange: false
+          }
+        };
       }
-    };
-
-    Plotly.newPlot('plot', [trace], layout, {responsive: true});
-
-    // スライダー変更時に形だけ更新
-    function updatePlot() {
-      mu = parseFloat(muInput.value);
-      sigma = parseFloat(sigmaInput.value);
-      muValue.textContent = mu.toFixed(1);
-      sigmaValue.textContent = sigma.toFixed(1);
-
-      const ys = computeYs(mu, sigma);
-
-      // y だけ更新（軸はそのまま）
-      Plotly.restyle('plot', { y: [ys] });
     }
+
+    function updatePlot() {
+      const dist = distSelect.value;
+      let xs, ys, trace;
+
+      if (dist === 'normal') {
+        const mu = parseFloat(muInput.value);
+        const sigma = parseFloat(sigmaInput.value);
+        muValue.textContent = mu.toFixed(1);
+        sigmaValue.textContent = sigma.toFixed(1);
+
+        xs = normalXs;
+        ys = computeNormalYs(mu, sigma);
+
+        trace = {
+          x: xs,
+          y: ys,
+          mode: 'lines',
+          name: 'Normal PDF'
+        };
+      } else {
+        const alpha = parseFloat(alphaInput.value);
+        const beta = parseFloat(betaInput.value);
+        alphaValue.textContent = alpha.toFixed(1);
+        betaValue.textContent = beta.toFixed(1);
+
+        const data = generateBetaData(alpha, beta);
+        xs = data.xs;
+        ys = data.ys;
+
+        trace = {
+          x: xs,
+          y: ys,
+          mode: 'lines',
+          name: 'Beta PDF'
+        };
+      }
+
+      const layout = getLayoutForDist(dist);
+
+      Plotly.react('plot', [trace], layout, { responsive: true });
+    }
+
+    // ===== イベント設定 =====
+    distSelect.addEventListener('change', () => {
+      const dist = distSelect.value;
+      if (dist === 'normal') {
+        normalControls.style.display = '';
+        betaControls.style.display = 'none';
+      } else {
+        normalControls.style.display = 'none';
+        betaControls.style.display = '';
+      }
+      updatePlot();
+    });
 
     muInput.addEventListener('input', updatePlot);
     sigmaInput.addEventListener('input', updatePlot);
+    alphaInput.addEventListener('input', updatePlot);
+    betaInput.addEventListener('input', updatePlot);
+
+    // 初期描画
+    updatePlot();
   </script>
 </body>
 </html>
