@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>正規分布デモ</title>
+  <title>正規分布デモ（軸固定）</title>
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     body { font-family: sans-serif; max-width: 800px; margin: 20px auto; }
@@ -11,7 +11,7 @@
   </style>
 </head>
 <body>
-  <h1>正規分布（μ と σ を変えてみる）</h1>
+  <h1>正規分布（μ と σ を変えても軸は固定）</h1>
 
   <div class="control">
     <label>
@@ -27,23 +27,30 @@
   <div id="plot" style="width:100%;height:400px;"></div>
 
   <script>
+    // 正規分布の密度関数
     function normalPdf(x, mu, sigma) {
       const coeff = 1 / (sigma * Math.sqrt(2 * Math.PI));
       const exponent = - Math.pow(x - mu, 2) / (2 * sigma * sigma);
       return coeff * Math.exp(exponent);
     }
 
-    function generateData(mu, sigma) {
+    // x は固定の範囲 [-10, 10] で生成
+    function generateXs() {
       const xs = [];
-      const ys = [];
-      const start = mu - 4 * sigma;
-      const end = mu + 4 * sigma;
-      const step = (end - start) / 200;
+      const start = -10;
+      const end = 10;
+      const step = (end - start) / 400;
       for (let x = start; x <= end; x += step) {
         xs.push(x);
-        ys.push(normalPdf(x, mu, sigma));
       }
-      return { xs, ys };
+      return xs;
+    }
+
+    const xs = generateXs();
+
+    // 与えられた μ, σ で y を計算
+    function computeYs(mu, sigma) {
+      return xs.map(x => normalPdf(x, mu, sigma));
     }
 
     const muInput = document.getElementById('mu');
@@ -51,35 +58,52 @@
     const muValue = document.getElementById('mu-value');
     const sigmaValue = document.getElementById('sigma-value');
 
-    function draw() {
-      const mu = parseFloat(muInput.value);
-      const sigma = parseFloat(sigmaInput.value);
+    // 初期パラメータ
+    let mu = parseFloat(muInput.value);
+    let sigma = parseFloat(sigmaInput.value);
+
+    // 初期描画
+    muValue.textContent = mu.toFixed(1);
+    sigmaValue.textContent = sigma.toFixed(1);
+
+    const trace = {
+      x: xs,
+      y: computeYs(mu, sigma),
+      mode: 'lines',
+      name: 'Normal PDF'
+    };
+
+    const layout = {
+      margin: { t: 20 },
+      xaxis: {
+        title: 'x',
+        range: [-10, 10],     // x 軸を固定
+        autorange: false
+      },
+      yaxis: {
+        title: 'f(x)',
+        range: [0, 0.5],      // y 軸も固定（必要に応じて調整）
+        autorange: false
+      }
+    };
+
+    Plotly.newPlot('plot', [trace], layout, {responsive: true});
+
+    // スライダー変更時に形だけ更新
+    function updatePlot() {
+      mu = parseFloat(muInput.value);
+      sigma = parseFloat(sigmaInput.value);
       muValue.textContent = mu.toFixed(1);
       sigmaValue.textContent = sigma.toFixed(1);
 
-      const { xs, ys } = generateData(mu, sigma);
+      const ys = computeYs(mu, sigma);
 
-      const trace = {
-        x: xs,
-        y: ys,
-        mode: 'lines',
-        name: 'Normal PDF'
-      };
-
-      const layout = {
-        margin: { t: 20 },
-        xaxis: { title: 'x' },
-        yaxis: { title: 'f(x)' }
-      };
-
-      Plotly.newPlot('plot', [trace], layout, {responsive: true});
+      // y だけ更新（軸はそのまま）
+      Plotly.restyle('plot', { y: [ys] });
     }
 
-    muInput.addEventListener('input', draw);
-    sigmaInput.addEventListener('input', draw);
-
-    // 初期描画
-    draw();
+    muInput.addEventListener('input', updatePlot);
+    sigmaInput.addEventListener('input', updatePlot);
   </script>
 </body>
 </html>
